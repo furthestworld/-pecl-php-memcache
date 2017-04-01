@@ -21,3 +21,7 @@ Herman J. Radtke III	hradtke at php dot net
 ## 用官方[memcache扩展](https://git.php.net/repository/pecl/caching/memcache.git)代码为例子，研究下PHP扩展开发的一些常规套路
 
 > 有兴趣的童鞋一起哈~
+
+* 参考书籍
+    * [PHP扩展开发及内核应用](http://www.cunmou.com/phpbook/index.md)
+    请自行阅读一百遍~ :)
