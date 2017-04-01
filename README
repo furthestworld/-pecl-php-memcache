@@ -15,3 +15,9 @@ How to run tests:
 
 Maintainers:
 Herman J. Radtke III	hradtke at php dot net
+
+
+--------
+## 用官方[memcache扩展](https://git.php.net/repository/pecl/caching/memcache.git)代码为例子，研究下PHP扩展开发的一些常规套路
+
+> 有兴趣的童鞋一起哈~
