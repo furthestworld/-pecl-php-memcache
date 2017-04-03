@@ -147,6 +147,10 @@ typedef struct mmc_pool {
 	void					*hash_state;
 } mmc_pool_t;
 
+/*
+ * 这里定义了扩展的全局变量，相当于定义了一个结构体：zend_memcache_globals。这就是你在memcache.c中看到的zend_memcache_globals的出生地。
+ * 至于为啥是这样，请自行是看zend中这个宏的定义。
+ */
 /* our globals */
 ZEND_BEGIN_MODULE_GLOBALS(memcache)
 	long debug_mode;
@@ -219,6 +223,9 @@ void mmc_debug(const char *format, ...);
 #endif
 /* }}} */
 
+/*
+ * 在线程安全和非线程安全情况下，获取全局变量的方式不同。为了使用统一一般这么封装一层。
+ */
 #ifdef ZTS
 #define MEMCACHE_G(v) TSRMG(memcache_globals_id, zend_memcache_globals *, v)
 #else

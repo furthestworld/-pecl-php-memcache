@@ -147,6 +147,12 @@ zend_module_entry memcache_module_entry = {
 ZEND_GET_MODULE(memcache)
 #endif
 
+/*
+ * 下面是定义ini配置修改时的回调函数的格式套路。memcache这里的几个回调函数，都是拿来做一些参数合法性验证的。
+ * 值得一提的是，PHP_INI_MH就是ZEND_INI_MH.像这种一毛一样的功能但是很多个别名的情况，在ZEND提供的API里面，以及在PHP扩展的源代码里面可以说是多到令人发指啊！
+ * 所以如果你看到一个怪怪的名称，第一反应就是：这货是不是一个别名啊？然后自己默默的去查一下，就不要直接问为什么了。不要给澳大利亚队任何装逼的机会！
+ * 坦率地说，这几个函数的出场是不是早了点？
+ */
 static PHP_INI_MH(OnUpdateChunkSize) /* {{{ */
 {
 	long int lval;
@@ -223,6 +229,13 @@ static PHP_INI_MH(OnUpdateDefaultTimeout) /* {{{ */
 }
 /* }}} */
 
+/*
+ * 你看，上面定义的几个回调函数，就是在这里用的。
+ * 要让ini的配置生效，即可以在PHP中修改，就要像下面这样放到PHP_INI_BEGIN和PHP_INI_END之间。
+ * STD_PHP_INI_ENTRY实现了把INI配置绑定到扩展的全局设置。其中STD_PHP_INI_ENTRY中第5个参数是php_memcache.h中定义的全局变量。
+ * 关于php扩展全局变量的定义和用法，参考这里：https://github.com/walu/phpbook/blob/master/12.4.md
+ * 详情参考 这里: http://www.cunmou.com/phpbook/13.1.md
+ */
 /* {{{ PHP_INI */
 PHP_INI_BEGIN()
 	STD_PHP_INI_ENTRY("memcache.allow_failover",	"1",		PHP_INI_ALL, OnUpdateLong,		allow_failover,	zend_memcache_globals,	memcache_globals)
@@ -235,6 +248,10 @@ PHP_INI_BEGIN()
 PHP_INI_END()
 /* }}} */
 
+/*
+ * 如果你从上面之间看到这里，肯定对这十几个声明一脸蒙逼。相信我，这不是你的错。
+ * 暂时忽略它们，假装你已经看穿了它们的意图并露出一个蜜汁微笑就阔以了。跳过去~
+ */
 /* {{{ internal function protos */
 static void _mmc_pool_list_dtor(zend_rsrc_list_entry * TSRMLS_DC);
 static void _mmc_pserver_list_dtor(zend_rsrc_list_entry * TSRMLS_DC);
@@ -266,6 +283,10 @@ extern mmc_hash_t mmc_standard_hash;
 extern mmc_hash_t mmc_consistent_hash;
 /* }}} */
 
+/*
+ * 这里定义了一个初始化扩展全局变量的函数。关于这个全局变量的处理，就牵扯出来了扩展一个最让人蛋疼的地方：线程安全（ZTS）和非线程安全。
+ * 对应的全局变量的初始化函数也不一样。
+ */
 /* {{{ php_memcache_init_globals()
 */
 static void php_memcache_init_globals(zend_memcache_globals *memcache_globals_p TSRMLS_DC)
@@ -279,17 +300,35 @@ static void php_memcache_init_globals(zend_memcache_globals *memcache_globals_p 
 }
 /* }}} */
 
+/*
+ * 高能的来了！
+ * 扩展模块初始化阶段。这里主要是全局变量、常量初始化，和定义了扩展类
+ */
 /* {{{ PHP_MINIT_FUNCTION
  */
 PHP_MINIT_FUNCTION(memcache)
 {
+	/*
+	 * 下面3行代码的国民三连之后，就定义好了一个名为Memcache的类了。
+	 * memcache_class_entry是zend_class_entry结构体类型。php_memcache_class_functions是上面定义好的类的方法列表。
+	 */
 	zend_class_entry memcache_class_entry;
 	INIT_CLASS_ENTRY(memcache_class_entry, "Memcache", php_memcache_class_functions);
 	memcache_class_entry_ptr = zend_register_internal_class(&memcache_class_entry TSRMLS_CC);
 
+	/*
+	 * 下面2行是向内核中注册了2种新的资源类型。扩展中使用资源的套路是先用类似下面这样的方式注册。
+	 * 这2个资源类型分别是短连接类型资源和长连接类型资源。分别对应的资源销毁回调函数是zend_register_list_destructors_ex的第一和第二个参数。
+	 * 详情 猛戳： https://github.com/walu/phpbook/blob/master/9.1.md
+	 * 看到这_mmc_pool_list_dtor 和 _mmc_pserver_list_dtor似不似很眼熟？ 是的。这就是上面你漏出蜜汁微笑时看到的那里声明，并且在下面定义的2个释放资源的函数。
+	 * 所有的谜题都解开了！新机呲哇，一次摸喜多次！
+	 */
 	le_memcache_pool = zend_register_list_destructors_ex(_mmc_pool_list_dtor, NULL, "memcache connection", module_number);
 	le_pmemcache = zend_register_list_destructors_ex(NULL, _mmc_pserver_list_dtor, "persistent memcache connection", module_number);
 
+/*
+ * 线程和非线程情况下，初始化全局变量的差别，详情猛戳：https://github.com/walu/phpbook/blob/master/12.4.md
+ */
 #ifdef ZTS
 	ts_allocate_id(&memcache_globals_id, sizeof(zend_memcache_globals), (ts_allocate_ctor) php_memcache_init_globals, NULL);
 #else
