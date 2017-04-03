@@ -5,3 +5,4 @@
 .buildpath
 ignore
 cmake-build-debug/
+php-5.6.16

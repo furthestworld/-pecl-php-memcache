@@ -57,6 +57,9 @@ static zend_class_entry *memcache_class_entry_ptr;
 ZEND_DECLARE_MODULE_GLOBALS(memcache)
 
 /* {{{ memcache_functions[]
+ *
+ * 开发的PHP扩展对外暴露的API方法声明列表
+ * zend 宏API:PHP_FE(方法名, NULL)
  */
 zend_function_entry memcache_functions[] = {
 	PHP_FE(memcache_connect,		NULL)
@@ -82,6 +85,10 @@ zend_function_entry memcache_functions[] = {
 	{NULL, NULL, NULL}
 };
 
+
+/**
+ * 扩展方法对应的别名
+ */
 static zend_function_entry php_memcache_class_functions[] = {
 	PHP_FALIAS(connect,			memcache_connect,			NULL)
 	PHP_FALIAS(pconnect,		memcache_pconnect,			NULL)
@@ -108,26 +115,35 @@ static zend_function_entry php_memcache_class_functions[] = {
 /* }}} */
 
 /* {{{ memcache_module_entry
+ * 这个厉害了啊！
+ * 这个是整个扩展的主控流程————开始你的表演~
+ * 江湖传言：一个PHP Extension在C语言层面实际上就是一个zend_module_entry结构体。
+ * 			所以，开发一个扩展就是定义一个zend_module_entry结构体。就是下面这样。
+ * 			这个结构体的定义看着着实蛋疼，暂时只关心我们用到的这几项吧。详见每项注释
+ * 			这里是定义部分，在php_memcache.h里声明了.关于C中凡是要先声明的设定，感觉心好累啊~
  */
 zend_module_entry memcache_module_entry = {
+/*
+ * 这里看粗来为了兼容多个PHP版本对应的API版本，也是费尽心机啊！
+ */
 #if ZEND_MODULE_API_NO >= 20010901
 	STANDARD_MODULE_HEADER,
 #endif
-	"memcache",
-	memcache_functions,
-	PHP_MINIT(memcache),
-	PHP_MSHUTDOWN(memcache),
-	PHP_RINIT(memcache),
-	NULL,
-	PHP_MINFO(memcache),
-#if ZEND_MODULE_API_NO >= 20010901
+	"memcache",                         //开发的扩展名称
+	memcache_functions,                 //扩展的方法列表，是个zend_function_entry类型
+	PHP_MINIT(memcache),                //PHP扩展模块初始化阶段
+	PHP_MSHUTDOWN(memcache),            //PHP扩展模块卸载阶段
+	PHP_RINIT(memcache),                //PHP请求初始化阶段
+	NULL,                               //PHP请求结束阶段，这里看来是用不到~
+	PHP_MINFO(memcache),                //扩展信息
+#if ZEND_MODULE_API_NO >= 20010901      //扩展的版本
 	PHP_MEMCACHE_VERSION,
 #endif
 	STANDARD_MODULE_PROPERTIES
 };
 /* }}} */
 
-#ifdef COMPILE_DL_MEMCACHE
+#ifdef COMPILE_DL_MEMCACHE			//目前没看出来这个地方的定义是何意，懂得解释下
 ZEND_GET_MODULE(memcache)
 #endif
 
