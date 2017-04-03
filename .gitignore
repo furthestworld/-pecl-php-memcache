@@ -4,3 +4,4 @@
 .idea/
 .buildpath
 ignore
+cmake-build-debug/
