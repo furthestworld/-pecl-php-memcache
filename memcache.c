@@ -335,13 +335,22 @@ PHP_MINIT_FUNCTION(memcache)
 	php_memcache_init_globals(&memcache_globals TSRMLS_CC);
 #endif
 
+/*
+ * 这里是定义了一些常量：常量名、常量值、是否大小写敏感 | 该常量的作用域和生命周期
+ * 详情猛戳：https://github.com/walu/phpbook/blob/master/12.3.md
+ * 坦率的讲，我并没有发现这几个常量在扩展中有什么卵用。。。
+ * 全局搜索了下，发现只是在tests目录里面有用到。所以为啥要在这里粗现呢？
+ */
 	REGISTER_LONG_CONSTANT("MEMCACHE_COMPRESSED", MMC_COMPRESSED, CONST_CS | CONST_PERSISTENT);
 	REGISTER_LONG_CONSTANT("MEMCACHE_USER1", MMC_RESERVED_APPLICATIONDEFINEDFLAG_12, CONST_CS | CONST_PERSISTENT);
 	REGISTER_LONG_CONSTANT("MEMCACHE_USER2", MMC_RESERVED_APPLICATIONDEFINEDFLAG_13, CONST_CS | CONST_PERSISTENT);
 	REGISTER_LONG_CONSTANT("MEMCACHE_USER3", MMC_RESERVED_APPLICATIONDEFINEDFLAG_14, CONST_CS | CONST_PERSISTENT);
 	REGISTER_LONG_CONSTANT("MEMCACHE_USER4", MMC_RESERVED_APPLICATIONDEFINEDFLAG_15, CONST_CS | CONST_PERSISTENT);
-	REGISTER_INI_ENTRIES();
+	REGISTER_INI_ENTRIES();	//注册ini配置。当然，有注册就有注销。这一行躲在这里非常不显眼啊~
 
+/*
+ * 关于session的部分，不影响主要逻辑，暂时我就忽略掉。。
+ */
 #if HAVE_MEMCACHE_SESSION
 	REGISTER_LONG_CONSTANT("MEMCACHE_HAVE_SESSION", 1, CONST_CS | CONST_PERSISTENT);
 	php_session_register_module(ps_memcache_ptr);
@@ -350,6 +359,10 @@ PHP_MINIT_FUNCTION(memcache)
 #endif
 
 	return SUCCESS;
+	/*
+	 * 至此，扩展模块初始化阶段工作结束。回顾下都做些了什么？
+	 * 定义了扩展类Memcache、注册了长短连接资源、注册了些然并卵的常量、注册INI配置项。。。
+	 */
 }
 /* }}} */
 
@@ -357,11 +370,14 @@ PHP_MINIT_FUNCTION(memcache)
  */
 PHP_MSHUTDOWN_FUNCTION(memcache)
 {
-	UNREGISTER_INI_ENTRIES();
+	UNREGISTER_INI_ENTRIES();	//注销之前注册的INI配置。MSHUTDOWN工作还真是悠闲啊~
 	return SUCCESS;
 }
 /* }}} */
 
+/*
+ * 请求初始化阶段。就只设置了个debug_mode？！
+ */
 /* {{{ PHP_RINIT_FUNCTION
  */
 PHP_RINIT_FUNCTION(memcache)
@@ -371,14 +387,20 @@ PHP_RINIT_FUNCTION(memcache)
 }
 /* }}} */
 
+/*
+ * phpinfo中显示的扩展信息初始化阶段
+ */
 /* {{{ PHP_MINFO_FUNCTION
  */
 PHP_MINFO_FUNCTION(memcache)
 {
 	char buf[MAX_LENGTH_OF_LONG + 1];
 
-	sprintf(buf, "%ld", MEMCACHE_G(num_persistent));
+	sprintf(buf, "%ld", MEMCACHE_G(num_persistent));	//长连接数量
 
+	/*
+	 * 这几行就是在phpinfo中看到的那个表格列表中的信息
+	 */
 	php_info_print_table_start();
 	php_info_print_table_header(2, "memcache support", "enabled");
 	php_info_print_table_row(2, "Active persistent connections", buf);
@@ -386,6 +408,9 @@ PHP_MINFO_FUNCTION(memcache)
 	php_info_print_table_row(2, "Revision", "$Revision$");
 	php_info_print_table_end();
 
+	/*
+	 * 展示INI设置
+	 */
 	DISPLAY_INI_ENTRIES();
 }
 /* }}} */
@@ -394,6 +419,9 @@ PHP_MINFO_FUNCTION(memcache)
    internal functions
    ------------------ */
 
+/*
+ * 调试函数，如果开启了扩展的调试模式的话，才会起作用
+ */
 #if ZEND_DEBUG
 void mmc_debug(const char *format, ...) /* {{{ */
 {
@@ -413,6 +441,12 @@ void mmc_debug(const char *format, ...) /* {{{ */
 /* }}} */
 #endif
 
+/*
+ * 这里定义了一个类型为timeval结构体的超时时间变量。
+ * 这个timeval结构体的定义在time.h里面。自行查找。
+ * 好久没看C了。猛一看到这个有点短时性蒙逼， 一般定义结构体不都是个变量么？还可以这么玩啊
+ * 定义+初始化一起。毫秒 转 秒+微秒
+ */
 static struct timeval _convert_timeoutms_to_ts(long msecs) /* {{{ */
 {
 	struct timeval tv;
@@ -425,6 +459,13 @@ static struct timeval _convert_timeoutms_to_ts(long msecs) /* {{{ */
 }
 /* }}} */
 
+/*
+ * memcache连接释放函数，各种嵌套调用啊！
+ * 这里又调用了mmc_pool_free。
+ * zend_rsrc_list_entry是zend_list.h里面定义的一个结构体变量_zend_rsrc_list_entry，用来描述一个资源。
+ * 这个函数的大招就是：调用mmc_pool_free去释放一个资源。
+ * 接下来就请大家和记者一起连线mmc_pool_free，看看它是怎么做的————
+ */
 static void _mmc_pool_list_dtor(zend_rsrc_list_entry *rsrc TSRMLS_DC) /* {{{ */
 {
 	mmc_pool_free((mmc_pool_t *)rsrc->ptr TSRMLS_CC);
@@ -504,6 +545,9 @@ static void mmc_server_sleep(mmc_t *mmc TSRMLS_DC) /*
 }
 /* }}} */
 
+/*
+ *
+ */
 static void mmc_server_free(mmc_t *mmc TSRMLS_DC) /* {{{ */
 {
 	if (mmc->in_free) {
@@ -719,10 +763,21 @@ mmc_pool_t *mmc_pool_new(TSRMLS_D) /* {{{ */
 }
 /* }}} */
 
+/*
+ * 3、2、1————
+ * 好的，_mmc_pool_list_dtor。大家可以看到这里传递了一个mmc_pool_t类型的指针过来。
+ * 我们这里就开始释放这个指针所指向的空间，释放他们。是的。无罪释放。
+ * 这里会有个多层的嵌套调用链(在调用正常的情况下如下)：
+ * 短连接池：mmc_pool_free->mmc_server_free->php_stream_close->php_stream_close->efree
+ * 长连接池：mmc_pool_free->mmc_server_free->mmc_server_sleep->free
+ */
 void mmc_pool_free(mmc_pool_t *pool TSRMLS_DC) /* {{{ */
 {
 	int i;
-
+	/*
+	 * 这里在释放动作开始的时候先设置一个标识，表示正在释放中。。
+	 * 所以先判断是否正在释放中，防止递归释放。
+	 */
 	if (pool->in_free) {
 		php_error_docref(NULL TSRMLS_CC, E_ERROR, "Recursive reference detected, bailing out");
 		return;

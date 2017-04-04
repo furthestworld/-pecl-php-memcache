@@ -96,6 +96,11 @@ PHP_FUNCTION(memcache_setoptimeout);
 #define MMC_CONSISTENT_POINTS 160			/* points per server */
 #define MMC_CONSISTENT_BUCKETS 1024			/* number of precomputed buckets, should be power of 2 */
 
+/*
+ * memcache 连接结构体
+ * 可以算是一个memcache连接的最小单元。后面的连接池等都是在此基础上组合起来的。
+ * 所谓道生一，一生二，二生三，三生万物。。。
+ */
 typedef struct mmc {
 	php_stream				*stream;
 	char					inbuf[MMC_BUF_SIZE];
@@ -136,13 +141,21 @@ typedef struct mmc_hash {
 #define FNV_32_PRIME 0x01000193
 #define FNV_32_INIT 0x811c9dc5 
 
+/*
+ * memcache连接池结构体
+ * 看到现在的理解是，memcache扩展里面的连接池就分为短连接池和长连接池2个。
+ * 每个连接池中有下面这些属性或者说细节。新的请求进来时如果连接池已经存在了，并不会新建连接池。
+ * 从连接池中按照一定的hash规则选择一个服务器，来进行请求端的操作。
+ * 关于所谓的操作，其实就是在C层面的数据的流处理
+ * 后面进行看，不知道会不会秒打脸~
+ */
 typedef struct mmc_pool {
-	mmc_t					**servers;
-	int						num_servers;
-	mmc_t					**requests;
-	int						compress_threshold;
-	double					min_compress_savings;
-	zend_bool				in_free;
+	mmc_t					**servers;				//连接池中memcache服务器体指针的指针
+	int						num_servers;			//连接池中memcache服务器的数量
+	mmc_t					**requests;				//连接池中请求体的指针的指针
+	int						compress_threshold;		//是否开启大值压缩，存储时存储项的内容超过多大时对值进行压缩然后存储
+	double					min_compress_savings;	//压缩比例
+	zend_bool				in_free;				//是否正在被释放
 	mmc_hash_t				*hash;
 	void					*hash_state;
 } mmc_pool_t;
@@ -204,6 +217,9 @@ extern ps_module ps_mod_memcache;
 PS_FUNCS(memcache);
 #endif
 
+/*
+ * 封装一个调试函数的宏。当开启扩展调试模式时，声明并使用mmc_debug函数；否则，什么用不做。
+ */
 /* {{{ macros */
 #if ZEND_DEBUG
 
