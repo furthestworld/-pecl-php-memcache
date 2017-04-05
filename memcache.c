@@ -617,7 +617,11 @@ int mmc_server_failure(mmc_t *mmc TSRMLS_DC) /*determines if a request should be
 	return 1;
 }
 /* }}} */
-
+/*
+ * 真正的memcache存储操作。
+ * 原理就是使用zend封装好的API，进行数据流操作：命令写入流（php_stream_write），然后读取流（mmc_readline）
+ * 这里有个疑惑的地方：写入之后就立刻读取，这里的实时性是如何保证的呢？是不是读取流的时候是个阻塞等待操作？
+ */
 static int mmc_server_store(mmc_t *mmc, const char *request, int request_len TSRMLS_DC) /* {{{ */
 {
 	int response_len;
@@ -656,6 +660,10 @@ static int mmc_server_store(mmc_t *mmc, const char *request, int request_len TSR
 }
 /* }}} */
 
+/*
+ * 1. key不能为空，限制key的最大长度
+ * 2. 替换key中的空格为下划线
+ */
 int mmc_prepare_key_ex(const char *key, unsigned int key_len, char *result, unsigned int *result_len TSRMLS_DC)  /* {{{ */
 {
 	unsigned int i;
@@ -749,6 +757,9 @@ static void mmc_pool_init_hash(mmc_pool_t *pool TSRMLS_DC) /* {{{ */
 }
 /* }}} */
 
+/*
+ * 新建一个连接池
+ */
 mmc_pool_t *mmc_pool_new(TSRMLS_D) /* {{{ */
 {
 	mmc_pool_t *pool = emalloc(sizeof(mmc_pool_t));
@@ -767,6 +778,7 @@ mmc_pool_t *mmc_pool_new(TSRMLS_D) /* {{{ */
  * 3、2、1————
  * 好的，_mmc_pool_list_dtor。大家可以看到这里传递了一个mmc_pool_t类型的指针过来。
  * 我们这里就开始释放这个指针所指向的空间，释放他们。是的。无罪释放。
+ * 释放连接池时，也释放这个池中的所有连接和这些连接的 hash_state
  * 这里会有个多层的嵌套调用链(在调用正常的情况下如下)：
  * 短连接池：mmc_pool_free->mmc_server_free->php_stream_close->php_stream_close->efree
  * 长连接池：mmc_pool_free->mmc_server_free->mmc_server_sleep->free
@@ -806,6 +818,9 @@ void mmc_pool_free(mmc_pool_t *pool TSRMLS_DC) /* {{{ */
 }
 /* }}} */
 
+/*
+ * 向连接池中添加一个连接
+ */
 void mmc_pool_add(mmc_pool_t *pool, mmc_t *mmc, unsigned int weight) /* {{{ */
 {
 	/* add server and a preallocated request pointer */
@@ -1004,6 +1019,9 @@ static int mmc_uncompress(char **result, unsigned long *result_len, const char *
 }
 /* }}}*/
 
+/*
+ * 这个函数的技能就是获取一个可用的连接池
+ */
 static int mmc_get_pool(zval *id, mmc_pool_t **pool TSRMLS_DC) /* {{{ */
 {
 	zval **connection;
@@ -1220,6 +1238,11 @@ void mmc_server_deactivate(mmc_t *mmc TSRMLS_DC) /* 	disconnect and marks the se
 }
 /* }}} */
 
+/*
+ * 这个函数的大招就是：
+ * 从指定的memcache连接的数据流中读取一行数据（最长读取内容为 MMC_BUF_SIZE 长度），
+ * 读取成功则返回读取的数据的长度，否则返回-1
+ */
 static int mmc_readline(mmc_t *mmc TSRMLS_DC) /* {{{ */
 {
 	char *response;
@@ -1385,6 +1408,30 @@ static int mmc_postprocess_value(zval **return_value, char *value, int value_len
 }
 /* }}} */
 
+/*
+ * 关于读取数据这里有个开始比较疑惑的地方：一个获取操作，做了2次mmc read。
+ * 这个和memcache服务器返回数据格式有关。在官方的协议文档中这样说明：
+ *
+ *   After this command, the client expects zero or more items, each of
+ *   which is received as a text line followed by a data block. After all
+ *   the items have been transmitted, the server sends the string
+ *
+ *   "END\r\n"
+ *
+ *   to indicate the end of response.
+ *
+ *   Each item sent by the server looks like this:
+ *
+ *   VALUE <key> <flags> <bytes> [<cas unique>]\r\n
+ *   <data block>\r\n
+ *
+ * 意思就是这个获取的返回数据是多行的，类似下面这样：
+ *   VALUE <key> <flags> <bytes> [<cas unique>]\r\n
+ *   <data block>\r\n
+ *   END\r\n
+ * 所以扩展的实现是，先获取要获取的值，然后获取最后的END行。
+ * 详情猛戳：https://github.com/memcached/memcached/blob/master/doc/protocol.txt
+ */
 int mmc_exec_retrieval_cmd(mmc_pool_t *pool, const char *key, int key_len, zval **return_value, zval *return_flags TSRMLS_DC) /* {{{ */
 {
 	mmc_t *mmc;
@@ -1541,7 +1588,11 @@ static int mmc_exec_retrieval_cmd_multi(mmc_pool_t *pool, zval *keys, zval **ret
 	return result_status;
 }
 /* }}} */
-
+/*
+ * 1.读取 VALUE <key> <flags> <bytes>\r\n 这一行
+ * 2.读取真正的数据块行
+ * 各种内存操作啊，高空走钢丝一般~
+ */
 static int mmc_read_value(mmc_t *mmc, char **key, int *key_len, char **value, int *value_len, int *flags TSRMLS_DC) /* {{{ */
 {
 	char *data;
@@ -1567,6 +1618,10 @@ static int mmc_read_value(mmc_t *mmc, char **key, int *key_len, char **value, in
 	/* data_len + \r\n + \0 */
 	data = emalloc(data_len + 3);
 
+    /*
+     * 这个地方的for循环应该是考虑到读取数据流一次未读取完全的情况：
+     *  php_stream_read这个函数将返回从数据流实际读到缓冲区中的数据字节数. 为了保证读取数据完整，多次读取？
+     */
 	for (i=0; i<data_len+2; i+=size) {
 		if ((size = php_stream_read(mmc->stream, data + i, data_len + 2 - i)) == 0) {
 			mmc_server_seterror(mmc, "Failed reading value response body", 0);
@@ -1579,7 +1634,7 @@ static int mmc_read_value(mmc_t *mmc, char **key, int *key_len, char **value, in
 	}
 
 	data[data_len] = '\0';
-	
+
 	if ((*flags & MMC_COMPRESSED) && data_len > 0) {
 		char *result_data;
 		unsigned long result_len = 0;
@@ -1919,6 +1974,7 @@ static void php_mmc_store(INTERNAL_FUNCTION_PARAMETERS, char *command, int comma
 		}
 	}
 
+    //转换key中的不合法字符
 	if (mmc_prepare_key_ex(key, key_len, key_tmp, &key_tmp_len TSRMLS_CC) != MMC_OK) {
 		RETURN_FALSE;
 	}

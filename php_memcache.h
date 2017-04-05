@@ -102,8 +102,8 @@ PHP_FUNCTION(memcache_setoptimeout);
  * 所谓道生一，一生二，二生三，三生万物。。。
  */
 typedef struct mmc {
-	php_stream				*stream;
-	char					inbuf[MMC_BUF_SIZE];
+	php_stream				*stream;                //数据流句柄（指针）
+	char					inbuf[MMC_BUF_SIZE];    //用来存放从流中读取的数据的字符空间
 	smart_str				outbuf;
 	char					*host;
 	unsigned short			port;
