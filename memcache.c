@@ -278,6 +278,10 @@ static void php_mmc_incr_decr(INTERNAL_FUNCTION_PARAMETERS, int);
 static void php_mmc_connect(INTERNAL_FUNCTION_PARAMETERS, int);
 /* }}} */
 
+/*
+ * 这2行意思是，这里声明的这2货的定义在其他文件中
+ * （memcache_standard_hash.c和memcache_consistent_hash.c中）
+ */
 /* {{{ hash strategies */
 extern mmc_hash_t mmc_standard_hash;
 extern mmc_hash_t mmc_consistent_hash;
@@ -733,10 +737,19 @@ static unsigned int mmc_hash_fnv1a(const char *key, int key_len) /* FNV-1a hash 
 }
 /* }}} */
 
+/*
+ * 连接池hash策略和hash函数初始化
+ * 在这里完成了在php_memcache.h中提到的“抽象类”的继承和抽象方法的具体实现的工作。
+ *
+ */
 static void mmc_pool_init_hash(mmc_pool_t *pool TSRMLS_DC) /* {{{ */
 {
 	mmc_hash_function hash;
 
+    /*
+     * 这里指定了“抽象类”的继承关系。以扩展默认的来说，
+     * 这里继续把mmc_standard_hash类比做一个子类，它继承了这个抽象类，并且实现了4个抽象方法。
+     */
 	switch (MEMCACHE_G(hash_strategy)) {
 		case MMC_CONSISTENT_HASH:
 			pool->hash = &mmc_consistent_hash;
@@ -745,6 +758,9 @@ static void mmc_pool_init_hash(mmc_pool_t *pool TSRMLS_DC) /* {{{ */
 			pool->hash = &mmc_standard_hash;
 	}
 
+    /*
+     * 这里指定了具体的hash函数
+     */
 	switch (MEMCACHE_G(hash_function)) {
 		case MMC_HASH_FNV1A:
 			hash = &mmc_hash_fnv1a;
@@ -752,7 +768,13 @@ static void mmc_pool_init_hash(mmc_pool_t *pool TSRMLS_DC) /* {{{ */
 		default:
 			hash = &mmc_hash_crc32;
 	}
-	
+
+    /*
+     * 经过上面之后，即完成了抽象类的继承和抽象方法的实现。以默认为例：
+     *  pool->hash->create_state(hash) 相当于 执行了
+     *  mmc_standard_hash->mmc_standard_create_state函数
+     *  后面的pool->hash->add_server等函数同理。
+     */
 	pool->hash_state = pool->hash->create_state(hash);
 }
 /* }}} */

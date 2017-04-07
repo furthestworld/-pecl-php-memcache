@@ -120,6 +120,9 @@ typedef struct mmc {
 	zend_bool				in_free;
 } mmc_t;
 
+/*
+ * 声明几个后面memcache的hash策略会用的几个方法
+ */
 /* hashing strategy */
 typedef unsigned int (*mmc_hash_function)(const char *, int);
 typedef void * (*mmc_hash_create_state)(mmc_hash_function);
@@ -130,6 +133,19 @@ typedef void (*mmc_hash_add_server)(void *, mmc_t *, unsigned int);
 #define mmc_pool_find(pool, key, key_len) \
 	pool->hash->find_server(pool->hash_state, key, key_len)
 
+/*
+ * 这里定义的这个结构体用来实现动态设置memcache的hash策略。
+ * 实现原理类似面向对象中的多态和继承。就像PHP中类的方法的重载一样，只不过这里用结构体代替类、属性代替类的方法。
+ * 类比来说，这里相当于定义了mmc_hash类，类定义了
+ *      mmc_hash_create_state
+ *      mmc_hash_free_state
+ *      mmc_hash_find_server
+ *      mmc_hash_add_server
+ *  4个抽象方法。至于这4个方法具体怎么实现的呢，这里不关心，交给后面继承这个抽象类的类来实现。
+ *  这样就实现了：当在调用某个方法的时候，根据继承的类的不同而方法具体实现不同。
+ *  然后，整个这个“抽象类”作为连接池的一个属性。
+ *  这个继承这个抽象类动作则在函数：mmc_pool_init_hash 中来实现。
+ */
 typedef struct mmc_hash {
 	mmc_hash_create_state	create_state;
 	mmc_hash_free_state		free_state;
